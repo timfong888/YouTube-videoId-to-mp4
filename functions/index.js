@@ -1,10 +1,9 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const ytdl = require('ytdl-core');
-const ffmpeg = require('fluent-ffmpeg');
-const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const fs = require('fs');  // Add this line for file system module
 
 admin.initializeApp();
 
@@ -12,63 +11,55 @@ admin.initializeApp();
 const apiKey = functions.config().myapi.key;
 
 exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
+    // Check for API key in headers
     const providedApiKey = req.headers['x-api-key'];
-
     if (providedApiKey !== apiKey) {
         res.status(401).send('Unauthorized');
         return;
     }
 
+    // Check request method
     if (req.method !== 'POST') {
         res.status(405).send('Method Not Allowed');
         return;
     }
 
-    const videoId = req.body.videoID;
+    const videoId = req.body.videoId;
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    const audioPath = path.join(os.tmpdir(), `${videoId}.mp3`);
-    const videoPath = path.join(os.tmpdir(), `${videoId}.mp4`);
+
+    const audioPath = path.join(os.tmpdir(), `${videoId}.webm`); // returns the path to the operating system's default directory for temporary files. combines the temporary directory path with the desired filename.
+    const audioWriteStream = fs.createWriteStream(audioPath); // is a method from Node.js's File System module (fs). It creates a writable stream in a very simple manner. 
+                                                              // It opens the file located at audioPath for writing. If the file does not exist, it's created. If it does exist, it is truncated.
+  
+    console.info('videoId:', videoId);
+    console.info('videlUrl:', videoUrl);
 
     try {
-        let hasVideo = true;
-        
-        await new Promise((resolve, reject) => {
-            ytdl(videoUrl, { filter: format => format.container === 'mp4' && format.hasAudio })
-                .pipe(ffmpeg())
-                .output(videoPath)
-                .output(audioPath)
-                .on('end', resolve)
-                .on('error', reject);
-        });
-
+      const audioStream = ytdl(videoUrl, {
+        filter: 'audioonly',
+        quality: 'highestaudio',
+      });
+  
+      audioStream.pipe(audioWriteStream);
+  
+      audioWriteStream.on('finish', async () => {
+        // Upload to Firebase Storage
         const bucket = admin.storage().bucket();
-        const audioFile = bucket.file(`${videoId}.mp3`);
-        const videoFile = bucket.file(`${videoId}.mp4`);
-
-        if (hasVideo) {
-            await bucket.upload(videoPath, {
-                destination: videoFile.name,
-                metadata: {
-                    contentType: 'video/mp4',
-                },
-            });
-            await videoFile.makePublic();
-            const publicUrl = videoFile.publicUrl();
-            res.status(200).send({ url: publicUrl, type: 'video/mp4' });
-        } else {
-            await bucket.upload(audioPath, {
-                destination: audioFile.name,
-                metadata: {
-                    contentType: 'audio/mp3',
-                },
-            });
-            await audioFile.makePublic();
-            const publicUrl = audioFile.publicUrl();
-            res.status(200).send({ url: publicUrl, type: 'audio/mp3' });
-        }
-        
+        const audioFile = bucket.file(`${videoId}.webm`);
+  
+        await bucket.upload(audioPath, {
+          destination: audioFile.name,
+          metadata: {
+            contentType: 'audio/webm',  // Note the format
+          },
+        });
+  
+        await audioFile.makePublic();
+        const publicUrl = audioFile.publicUrl();
+        res.status(200).send({ audio_url: publicUrl, type: 'audio/webm' });  // Note the format
+      });
     } catch (error) {
-        console.error('Error processing video:', error);
-        res.status(500).send('Internal Server Error');
+      console.error('Error processing video:', error);
+      res.status(500).send('Internal Server Error');
     }
-});
+  });
