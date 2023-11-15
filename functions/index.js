@@ -41,6 +41,15 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
       });
   
       audioStream.pipe(audioWriteStream);
+
+      // It's a good practice to also listen to error events
+      audioStream.on('error', error => {
+        console.error(`Error in audioStream for video ID ${videoId}: `, error);
+      });
+
+      audioWriteStream.on('error', error => {
+        console.error(`Error in audioWriteStream for video ID ${videoId}: `, error);
+      });
   
       audioWriteStream.on('finish', async () => {
         // Upload to Firebase Storage
@@ -59,7 +68,10 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         res.status(200).send({ audio_url: publicUrl, type: 'audio/webm' });  // Note the format
       });
     } catch (error) {
-      console.error('Error processing video:', error);
-      res.status(500).send('Internal Server Error');
+      console.error(`Error in YouTube audio extraction function for video ID ${videoId}: `, error);
+      // Send an error response to the client
+      res.status(500).send(`Internal Server Error for video ID ${videoId}`);
     }
   });
+
+  //  firebase deploy --only functions:videoIdToMP4
