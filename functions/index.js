@@ -32,7 +32,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
                                                               // It opens the file located at audioPath for writing. If the file does not exist, it's created. If it does exist, it is truncated.
   
     console.info('videoId:', videoId);
-    console.info('videlUrl:', videoUrl);
+    console.info('videoUrl:', videoUrl);
 
     try {
       const audioStream = ytdl(videoUrl, {
@@ -40,6 +40,15 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         quality: 'highestaudio',
       });
   
+      // Listen to the 'data' event
+      let totalBytes = 0;
+
+      audioStream.on('data', (chunk) => {
+        totalBytes += chunk.length;
+        console.log(`Received ${chunk.length} bytes of data. Total received: ${totalBytes} bytes`);
+      });
+
+      // Pipe the audio data into the file we created earlier`
       audioStream.pipe(audioWriteStream);
 
       // It's a good practice to also listen to error events
@@ -52,6 +61,8 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
       });
   
       audioWriteStream.on('finish', async () => {
+        console.info(`audioWriteStream finished for ${videoId}`);
+        
         // Upload to Firebase Storage
         const bucket = admin.storage().bucket();
         const audioFile = bucket.file(`${videoId}.webm`);
@@ -75,3 +86,13 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
   });
 
   //  firebase deploy --only functions:videoIdToMP4
+
+  /*
+  https://github.com/fent/node-ytdl-core/issues/1251#issuecomment-1709610029
+  I fixed this issue by downgrading to 4.10.0 by using npm i ytdl-core@4.10.0
+  https://github.com/fent/node-ytdl-core/issues/1262
+  This fixed the timeout issue for me. I was using the latest version of ytdl-core (4.10.1) and used a forked version.
+  */
+
+  // firebase functions:config:get
+

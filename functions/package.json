@@ -13,10 +13,11 @@
   },
   "main": "index.js",
   "dependencies": {
+    "@distube/ytdl-core": "^4.13.2",
     "firebase-admin": "^11.8.0",
     "firebase-functions": "^4.3.1",
     "fluent-ffmpeg": "^2.1.2",
-    "ytdl-core": "^4.11.5"
+    "ytdl-core": "npm:@distube/ytdl-core@^4.13.2"
   },
   "devDependencies": {
     "firebase-functions-test": "^3.1.0"
