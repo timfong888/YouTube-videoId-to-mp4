@@ -27,6 +27,26 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
     const videoId = req.body.videoId;
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
+    // New Section: Check available audio formats
+    try {
+      const info = await ytdl.getInfo(videoUrl);
+      const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+      if (audioFormats.length === 0) {
+          res.status(404).send('No audio formats available for this video.');
+          return;
+      }
+      console.log('Available audio formats:', audioFormats);
+      // Assuming we use the first available format
+      const selectedFormat = audioFormats[0];
+      // Modify the existing audio extraction process to use the selected format
+      const audioUrl = selectedFormat.url;
+      //... Continue with your existing audio extraction process, but use audioUrl instead of videoUrl
+  } catch (error) {
+      console.error(`Error fetching video info for video ID ${videoId}: `, error);
+      res.status(500).send(`Internal Server Error while fetching video info for video ID ${videoId}`);
+      return;
+  }
+
     const audioPath = path.join(os.tmpdir(), `${videoId}.webm`); // returns the path to the operating system's default directory for temporary files. combines the temporary directory path with the desired filename.
     const audioWriteStream = fs.createWriteStream(audioPath); // is a method from Node.js's File System module (fs). It creates a writable stream in a very simple manner. 
                                                               // It opens the file located at audioPath for writing. If the file does not exist, it's created. If it does exist, it is truncated.
