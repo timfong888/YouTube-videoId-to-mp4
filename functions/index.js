@@ -32,78 +32,94 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
       const info = await ytdl.getInfo(videoUrl);
       const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
       if (audioFormats.length === 0) {
-          res.status(404).send('No audio formats available for this video.');
+          console.error('No audio formats available for this video', videoId);
+          res.status(404).send('No audio formats available for this video');
           return;
       }
-      console.log('Available audio formats:', audioFormats);
+      console.log(`Available audio formats for ${videoId}:`, audioFormats);
+
       // Assuming we use the first available format
       const selectedFormat = audioFormats[0];
+      const fileExtension = selectedFormat.container; // Typically, this would be 'mp4', 'webm', etc.
+
+      // After selecting the format
+      console.info(`Selected audio format for video ID ${videoId}:`, selectedFormat);       
+
       // Modify the existing audio extraction process to use the selected format
       const audioUrl = selectedFormat.url;
+      console.info(`videoId: ${videoId}: audioUrl: `, audioUrl);
+
       //... Continue with your existing audio extraction process, but use audioUrl instead of videoUrl
+
+      // Dynamic audio path based on the format
+      const audioPath = path.join(os.tmpdir(), `${videoId}.${fileExtension}`);
+      const audioWriteStream = fs.createWriteStream(audioPath); // is a method from Node.js's File System module (fs). It creates a writable stream in a very simple manner. 
+                                                              // It opens the file located at audioPath for writing. If the file does not exist, it's created. If it does exist, it is truncated.
+
+
+      try {
+        // Create a readable stream for the audio data
+        const audioStream = ytdl(videoUrl, {
+          filter: format => format.itag === selectedFormat.itag,
+          quality: 'highestaudio',
+        });
+
+    
+        // 
+        /*Listen to the 'data' event
+        let totalBytes = 0;
+
+        audioStream.on('data', (chunk) => {
+          totalBytes += chunk.length;
+          console.log(`Received ${chunk.length} bytes of data. Total received: ${totalBytes} bytes`);
+        });
+        */
+
+        // Pipe the audio data into the file we created earlier`
+        audioStream.pipe(audioWriteStream);
+
+        // It's a good practice to also listen to error events
+        audioStream.on('error', error => {
+          console.error(`Error in audioStream for video ID ${videoId}: `, error);
+        });
+
+        audioWriteStream.on('error', error => {
+          console.error(`Error in audioWriteStream for video ID ${videoId}: `, error);
+        });
+    
+        audioWriteStream.on('finish', async () => {
+          console.info(`audioWriteStream finished for ${videoId}`);
+          
+          // Upload to Firebase Storage
+          const bucket = admin.storage().bucket();
+          const audioFile = bucket.file(`${videoId}.${fileExtension}`); // Use dynamic file extension
+
+    
+          await bucket.upload(audioPath, {
+            destination: audioFile.name,
+            metadata: {
+              contentType: `audio/${fileExtension}`, // Dynamic content type based on file extension
+            },
+          });
+    
+          await audioFile.makePublic();
+          const publicUrl = audioFile.publicUrl();
+          res.status(200).send({ audio_url: publicUrl, type: 'audio/webm' });  // Note the format
+        });
+
+    } catch (error) {
+      console.error(`Error in YouTube audio extraction function for video ID ${videoId}: `, error);
+      // Send an error response to the client
+      res.status(500).send(`Internal Server Error for video ID ${videoId}`);
+    }
+
   } catch (error) {
       console.error(`Error fetching video info for video ID ${videoId}: `, error);
       res.status(500).send(`Internal Server Error while fetching video info for video ID ${videoId}`);
       return;
   }
 
-    const audioPath = path.join(os.tmpdir(), `${videoId}.webm`); // returns the path to the operating system's default directory for temporary files. combines the temporary directory path with the desired filename.
-    const audioWriteStream = fs.createWriteStream(audioPath); // is a method from Node.js's File System module (fs). It creates a writable stream in a very simple manner. 
-                                                              // It opens the file located at audioPath for writing. If the file does not exist, it's created. If it does exist, it is truncated.
-  
-    console.info('videoId:', videoId);
-    console.info('videoUrl:', videoUrl);
-
-    try {
-      const audioStream = ytdl(videoUrl, {
-        filter: 'audioonly',
-        quality: 'highestaudio',
-      });
-  
-      // Listen to the 'data' event
-      let totalBytes = 0;
-
-      audioStream.on('data', (chunk) => {
-        totalBytes += chunk.length;
-        console.log(`Received ${chunk.length} bytes of data. Total received: ${totalBytes} bytes`);
-      });
-
-      // Pipe the audio data into the file we created earlier`
-      audioStream.pipe(audioWriteStream);
-
-      // It's a good practice to also listen to error events
-      audioStream.on('error', error => {
-        console.error(`Error in audioStream for video ID ${videoId}: `, error);
-      });
-
-      audioWriteStream.on('error', error => {
-        console.error(`Error in audioWriteStream for video ID ${videoId}: `, error);
-      });
-  
-      audioWriteStream.on('finish', async () => {
-        console.info(`audioWriteStream finished for ${videoId}`);
-        
-        // Upload to Firebase Storage
-        const bucket = admin.storage().bucket();
-        const audioFile = bucket.file(`${videoId}.webm`);
-  
-        await bucket.upload(audioPath, {
-          destination: audioFile.name,
-          metadata: {
-            contentType: 'audio/webm',  // Note the format
-          },
-        });
-  
-        await audioFile.makePublic();
-        const publicUrl = audioFile.publicUrl();
-        res.status(200).send({ audio_url: publicUrl, type: 'audio/webm' });  // Note the format
-      });
-    } catch (error) {
-      console.error(`Error in YouTube audio extraction function for video ID ${videoId}: `, error);
-      // Send an error response to the client
-      res.status(500).send(`Internal Server Error for video ID ${videoId}`);
-    }
-  });
+});  
 
   //  firebase deploy --only functions:videoIdToMP4
 
