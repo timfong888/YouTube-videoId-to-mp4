@@ -10,7 +10,7 @@
     ],
     "videoIdToMP4": { 
       "timeoutSeconds": 500, 
-      "memory": "256MB"     
+      "memory": "512MB"     
     }
   }
 }

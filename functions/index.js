@@ -36,7 +36,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
           res.status(404).send('No audio formats available for this video');
           return;
       }
-      console.log(`Available audio formats for ${videoId}:`, audioFormats);
+      console.info(`Available audio formats for ${videoId}:`, audioFormats);
 
       // Assuming we use the first available format
       const selectedFormat = audioFormats[0];
@@ -93,7 +93,6 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
           // Upload to Firebase Storage
           const bucket = admin.storage().bucket();
           const audioFile = bucket.file(`${videoId}.${fileExtension}`); // Use dynamic file extension
-
     
           await bucket.upload(audioPath, {
             destination: audioFile.name,
@@ -104,6 +103,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
     
           await audioFile.makePublic();
           const publicUrl = audioFile.publicUrl();
+          console.info(`Public URL for audio file ${videoId}: `, publicUrl);
           res.status(200).send({ audio_url: publicUrl, type: 'audio/webm' });  // Note the format
         });
 
