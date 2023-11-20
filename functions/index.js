@@ -30,6 +30,8 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
     // New Section: Check available audio formats
     try {
       const info = await ytdl.getInfo(videoUrl);
+      const lengthSeconds = info.videoDetails.lengthSeconds; // Extracting the length in seconds
+      console.info(`Video length in seconds for video ID ${videoId}: `, lengthSeconds);
       const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
       if (audioFormats.length === 0) {
           console.error('No audio formats available for this video', videoId);
@@ -104,7 +106,11 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
           await audioFile.makePublic();
           const publicUrl = audioFile.publicUrl();
           console.info(`Public URL for audio file ${videoId}: `, publicUrl);
-          res.status(200).send({ audio_url: publicUrl, type: 'audio/webm' });  // Note the format
+          res.status(200).send({ 
+            audio_url: publicUrl, 
+            type: `audio/${fileExtension}`,  // Dynamic content type based on file extension
+            length_seconds: lengthSeconds // Including the length in seconds
+          });
         });
 
     } catch (error) {
