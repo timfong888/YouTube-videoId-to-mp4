@@ -1,16 +1,13 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const ytdl = require('ytdl-core');
-const path = require('path');
-const os = require('os');
-const fs = require('fs');  // Add this line for file system module
 
 admin.initializeApp();
 
-// Fetch API key from environment
-const apiKey = functions.config().myapi.key;
-
 exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
+    const apiKey = functions.config().myapi.key;
+    let responseSent = false;
+
     // Check for API key in headers
     const providedApiKey = req.headers['x-api-key'];
     if (providedApiKey !== apiKey) {
@@ -27,114 +24,127 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
     const videoId = req.body.videoId;
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
-    // New Section: Check available audio formats
     try {
-      const info = await ytdl.getInfo(videoUrl);
-      const lengthSeconds = info.videoDetails.lengthSeconds; // Extracting the length in seconds
-      console.info(`Video length in seconds for video ID ${videoId}: `, lengthSeconds);
-      const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
-      if (audioFormats.length === 0) {
-          console.error('No audio formats available for this video', videoId);
-          res.status(404).send('No audio formats available for this video');
-          return;
-      }
-      console.info(`Available audio formats for ${videoId}:`, audioFormats);
+        const info = await ytdl.getInfo(videoUrl);
+        const lengthSeconds = info.videoDetails.lengthSeconds;
+        const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
 
-      // Assuming we use the first available format
-      const selectedFormat = audioFormats[0];
-      const fileExtension = selectedFormat.container; // Typically, this would be 'mp4', 'webm', etc.
+        if (audioFormats.length === 0) {
+            res.status(404).send('No audio formats available for this video');
+            return;
+        }
 
-      // After selecting the format
-      console.info(`Selected audio format for video ID ${videoId}:`, selectedFormat);       
+        // Select the audio format with the lowest bitrate
+        const lowestQualityFormat = audioFormats.sort((a, b) => a.audioBitrate - b.audioBitrate)[0];
+        const fileExtension = lowestQualityFormat.container;
+        const contentLength = lowestQualityFormat.contentLength;
+        const fileName = `${videoId}.${fileExtension}`;
 
-      // Modify the existing audio extraction process to use the selected format
-      const audioUrl = selectedFormat.url;
-      console.info(`videoId: ${videoId}: audioUrl: `, audioUrl);
+        console.log(`Downloading audio from ${videoId} to ${fileName} of contentLength ${contentLength} via ${lowestQualityFormat.url}`);
 
-      //... Continue with your existing audio extraction process, but use audioUrl instead of videoUrl
+        // Reference to your Firebase Cloud Storage bucket
+        const bucket = admin.storage().bucket();
 
-      // Dynamic audio path based on the format
-      const audioPath = path.join(os.tmpdir(), `${videoId}.${fileExtension}`);
-      const audioWriteStream = fs.createWriteStream(audioPath); // is a method from Node.js's File System module (fs). It creates a writable stream in a very simple manner. 
-                                                              // It opens the file located at audioPath for writing. If the file does not exist, it's created. If it does exist, it is truncated.
+        // Create a file reference
+        const file = bucket.file(fileName);
 
-
-      try {
-        // Create a readable stream for the audio data
-        const audioStream = ytdl(videoUrl, {
-          filter: format => format.itag === selectedFormat.itag,
-          quality: 'highestaudio',
-        });
-
-    
-        // 
-        /*Listen to the 'data' event
-        let totalBytes = 0;
-
-        audioStream.on('data', (chunk) => {
-          totalBytes += chunk.length;
-          console.log(`Received ${chunk.length} bytes of data. Total received: ${totalBytes} bytes`);
-        });
-        */
-
-        // Pipe the audio data into the file we created earlier`
-        audioStream.pipe(audioWriteStream);
-
-        // It's a good practice to also listen to error events
-        audioStream.on('error', error => {
-          console.error(`Error in audioStream for video ID ${videoId}: `, error);
-        });
-
-        audioWriteStream.on('error', error => {
-          console.error(`Error in audioWriteStream for video ID ${videoId}: `, error);
-        });
-    
-        audioWriteStream.on('finish', async () => {
-          console.info(`audioWriteStream finished for ${videoId}`);
-          
-          // Upload to Firebase Storage
-          const bucket = admin.storage().bucket();
-          const audioFile = bucket.file(`${videoId}.${fileExtension}`); // Use dynamic file extension
-    
-          await bucket.upload(audioPath, {
-            destination: audioFile.name,
+        // Create a stream using ytdl-core
+        const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag });
+        const firebaseStream = file.createWriteStream({
             metadata: {
-              contentType: `audio/${fileExtension}`, // Dynamic content type based on file extension
+                contentType: lowestQualityFormat.mimeType,
             },
-          });
-    
-          await audioFile.makePublic();
-          const publicUrl = audioFile.publicUrl();
-          console.info(`Public URL for audio file ${videoId}: `, publicUrl);
-          res.status(200).send({ 
-            audio_url: publicUrl, 
-            type: `audio/${fileExtension}`,  // Dynamic content type based on file extension
-            length_seconds: lengthSeconds // Including the length in seconds
-          });
         });
 
+        const TOTAL_LOG_LINES = 5;
+        let logInterval = contentLength // TOTAL_LOG_LINES;
+        let nextLogPoint = logInterval;
+        let totalBytesReceived = 0;
+
+        // Add error handling and logging for the audio stream
+        audioStream.on('data', (chunk) => {
+            totalBytesReceived += chunk.length;
+            if (totalBytesReceived >= nextLogPoint) {
+                console.log(`Received ${totalBytesReceived} bytes of audio data out of ${contentLength} bytes total`);
+                nextLogPoint += logInterval;
+            }
+        }).on('error', (streamError) => {
+            console.error(`Error in audio stream for ${videoId}:`, streamError);
+            if (!responseSent) {
+                res.status(500).send('Error in audio stream');
+                responseSent = true;
+            }
+        }).on('end', () => {
+            if (isStreamError) {
+                console.log('Audio stream ended with errors.');
+            } else {
+                console.log('Audio stream ended successfully.');
+            }
+        });
+        
+        firebaseStream.on('error', (err) => {
+            console.error('Error uploading to Firebase Cloud Storage', err);
+            if (!responseSent) {
+                res.status(500).send('Error uploading audio');
+                responseSent = true;
+            }
+        });
+
+        let isStreamError = false;
+
+        audioStream.on('error', (streamError) => {
+            console.error(`Error in audio stream for ${videoId}:`, streamError);
+            isStreamError = true;
+            res.status(500).send('Error in audio stream');
+        });
+
+        firebaseStream.on('error', (err) => {
+            console.error('Error uploading to Firebase Cloud Storage', err);
+            isStreamError = true;
+            res.status(500).send('Error uploading audio');
+        });
+
+        // Pipe the ytdl-core stream to Firebase Cloud Storage
+        audioStream.pipe(firebaseStream)
+            .on('error', (err) => {
+                console.error('Error uploading to Firebase Cloud Storage', err);
+                res.status(500).send('Error uploading audio');
+            })
+            .on('finish', async () => {
+                console.log('Upload complete');
+                try {
+                    await file.makePublic();
+                    const publicUrl = file.publicUrl();
+                    console.log('File made public at URL:', publicUrl);
+
+                    // Fetch file metadata to confirm file size
+                    const metadata = await file.getMetadata();
+                    console.log(`Uploaded file metadata for ${videoId}: 
+                                Name: ${metadata[0].name}, 
+                                Bucket: ${metadata[0].bucket}, 
+                                Size: ${metadata[0].size} bytes, 
+                                MD5 Hash: ${metadata[0].md5Hash}, 
+                                Content Type: ${metadata[0].contentType}, 
+                                Created: ${metadata[0].timeCreated}, 
+                                Updated: ${metadata[0].updated}, 
+                                Media Link: ${metadata[0].mediaLink}`);
+
+                    if (!responseSent) {
+                        res.status(200).send({
+                            audio_url: publicUrl,
+                            type: `audio/${fileExtension}`,
+                            length_seconds: lengthSeconds,
+                            file_size: metadata[0].size
+                        });
+                        responseSent = true;
+                    };
+                } catch (publicError) {
+                    console.error('Error making file public:', publicError);
+                    res.status(500).send('Error making file public');
+                }
+            });
     } catch (error) {
-      console.error(`Error in YouTube audio extraction function for video ID ${videoId}: `, error);
-      // Send an error response to the client
-      res.status(500).send(`Internal Server Error for video ID ${videoId}`);
+        console.error(`Error in YouTube audio extraction function: `, error);
+        res.status(500).send('Internal Server Error');
     }
-
-  } catch (error) {
-      console.error(`Error fetching video info for video ID ${videoId}: `, error);
-      res.status(500).send(`Internal Server Error while fetching video info for video ID ${videoId}`);
-      return;
-  }
-
-});  
-
-  //  firebase deploy --only functions:videoIdToMP4
-
-  /*
-  https://github.com/fent/node-ytdl-core/issues/1251#issuecomment-1709610029
-  I fixed this issue by downgrading to 4.10.0 by using npm i ytdl-core@4.10.0
-  https://github.com/fent/node-ytdl-core/issues/1262
-  This fixed the timeout issue for me. I was using the latest version of ytdl-core (4.10.1) and used a forked version.
-  */
-
-  // firebase functions:config:get
-
+});
