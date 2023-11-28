@@ -1,6 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const ytdl = require('ytdl-core');
+const ytdl = require('@distube/ytdl-core');
+
 
 admin.initializeApp();
 
@@ -97,24 +98,23 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
                 }
                 console.log('Upload complete:', fileName  );
 
-                // Consolidated log statement for file details
-                console.log(`File Details:
-                    Name: ${metadata[0].name}
-                    Bucket: ${metadata[0].bucket}
-                    Size: ${metadata[0].size} bytes
-                    MD5 Hash: ${metadata[0].md5Hash}
-                    Content Type: ${metadata[0].contentType}
-                    Created: ${metadata[0].timeCreated}
-                    Updated: ${metadata[0].updated}
-                    Bitrate: ${bitrate} kbps`);
-
                 try {
                     await file.makePublic();
                     const publicUrl = file.publicUrl();
-
+                    console.log('File is now public:', publicUrl);
+                    
                     const metadata = await file.getMetadata();
 
-                    console.log()
+                    // Consolidated log statement for file details
+                    console.log(`File Details:
+                        Name: ${metadata[0].name}
+                        Bucket: ${metadata[0].bucket}
+                        Size: ${metadata[0].size} bytes
+                        MD5 Hash: ${metadata[0].md5Hash}
+                        Content Type: ${metadata[0].contentType}
+                        Created: ${metadata[0].timeCreated}
+                        Updated: ${metadata[0].updated}
+                        Bitrate: ${bitrate} kbps`);
                     
                     if (!responseSent) {
                         res.status(200).send({
