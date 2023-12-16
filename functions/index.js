@@ -1,6 +1,8 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
-const ytdl = require('@distube/ytdl-core');
+const ytdl = require('ytdl-core');
+const agent = ytdl.createProxyAgent({ uri: "https://spm8v50ymm:PCGu36goaJtvd25tlh@gate.smartproxy.com:7000" });
+console.log('agent:', agent);
 
 
 admin.initializeApp();
@@ -39,7 +41,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         }
 
         const lowestQualityFormat = audioFormats.sort((a, b) => a.audioBitrate - b.audioBitrate)[0];
-        console.log(lowestQualityFormat);
+        console.log(`lowestQualityFormat:`, lowestQualityFormat);
 
         const fileExtension = lowestQualityFormat.container;
         const contentLength = lowestQualityFormat.contentLength;
@@ -49,7 +51,9 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         const bucket = admin.storage().bucket();
         const file = bucket.file(fileName);
 
-        const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag });
+        // const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag });
+        const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag, requestOptions: { client: agent } });
+
         const firebaseStream = file.createWriteStream({
             metadata: {
                 contentType: lowestQualityFormat.mimeType,
@@ -112,6 +116,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
                         Size: ${metadata[0].size} bytes
                         MD5 Hash: ${metadata[0].md5Hash}
                         Content Type: ${metadata[0].contentType}
+                        Total Bytes: ${totalBytesReceived}
                         Created: ${metadata[0].timeCreated}
                         Updated: ${metadata[0].updated}
                         Bitrate: ${bitrate} kbps`);
@@ -121,7 +126,8 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
                             audio_url: publicUrl,
                             type: `audio/${fileExtension}`,
                             length_seconds: lengthSeconds,
-                            file_size: metadata[0].size
+                            file_size: metadata[0].size,
+                            transferred_bytes: totalBytesReceived // include the total bytes received
                         });
                         responseSent = true;
                     }
@@ -142,3 +148,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         }
     }
 });
+
+/*
+firebase deploy --only functions:videoIdToMP4
+*/
