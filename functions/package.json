@@ -16,6 +16,7 @@
     "firebase-admin": "^11.8.0",
     "firebase-functions": "^4.5.0",
     "fluent-ffmpeg": "^2.1.2",
+    "https-proxy-agent": "^7.0.2",
     "ytdl-core": "^4.11.5"
   },
   "devDependencies": {

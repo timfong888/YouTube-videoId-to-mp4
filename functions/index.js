@@ -1,7 +1,24 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const ytdl = require('ytdl-core');
-const agent = ytdl.createProxyAgent({ uri: "https://spm8v50ymm:PCGu36goaJtvd25tlh@gate.smartproxy.com:7000" });
+const { HttpsProxyAgent } = require('https-proxy-agent');
+
+const proxyURL = 'https://spm8v50ymm:PCGu36goaJtvd25tlh@gate.smartproxy.com:7000';
+
+// Create an options object for the HttpsProxyAgent
+const agentOptions = {
+    host: gate.smartproxy.com,
+    port: 7000,
+    protocol: 'https',
+    auth: 'spm8v50ymm:PCGu36goaJtvd25tlh',
+
+    // TLS protocol settings
+    secureProtocol: 'TLSv1_2_method', // Use TLS 1.2
+    // For TLS 1.3, use 'TLSv1_3_method' (ensure Node.js version compatibility)
+};
+
+
+const agent = new HttpsProxyAgent(proxyURL);
 console.log('agent:', agent);
 
 
@@ -35,6 +52,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
 
         if (audioFormats.length === 0) {
+            log.error(`No audio formats for ${videoId}`);
             res.status(404).send('No audio formats available for this video');
             responseSent = true;
             return;
@@ -51,8 +69,8 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         const bucket = admin.storage().bucket();
         const file = bucket.file(fileName);
 
-        // const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag });
-        const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag, requestOptions: { client: agent } });
+        const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag });
+        // const audioStream = ytdl(videoUrl, { quality: lowestQualityFormat.itag, requestOptions: { agent: agent } });
 
         const firebaseStream = file.createWriteStream({
             metadata: {
@@ -73,16 +91,19 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
             }
         }).on('error', (streamError) => {
             console.error(`Error in audio stream for ${videoId}:`, streamError);
+            
             isStreamError = true;
+            /*
             if (!responseSent) {
-                res.status(500).send('Error in audio stream');
+                res.status(500).send(`Error in audio stream`, streamError);
                 responseSent = true;
             }
+            */
         }).on('end', () => {
             if (isStreamError) {
-                console.log('Audio stream ended with errors.');
+                console.log(`Audio stream ended with errors. ${videoId}`);
             } else {
-                console.log('Audio stream ended successfully.');
+                console.log(`Audio stream ended successfully:`, videoId);
             }
         });
 
@@ -90,7 +111,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
             console.error('Error uploading to Firebase Cloud Storage', err);
             isStreamError = true;
             if (!responseSent) {
-                res.status(500).send('Error uploading audio');
+                res.status(500).send(`Error uploading audio ${videoId}`, err);
                 responseSent = true;
             }
         });
@@ -141,9 +162,9 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
             });
 
     } catch (error) {
-        console.error(`Error in YouTube audio extraction function: `, error);
+        console.error(`Error in YouTube audio extraction function - ${videoId}: `, error);
         if (!responseSent) {
-            res.status(500).send('Internal Server Error');
+            res.status(500).send(`Internal Server Error - ${videoId}: `, error);
             responseSent = true;
         }
     }
