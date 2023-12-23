@@ -7,7 +7,7 @@ const proxyURL = 'https://spm8v50ymm:PCGu36goaJtvd25tlh@gate.smartproxy.com:7000
 
 // Create an options object for the HttpsProxyAgent
 const agentOptions = {
-    host: gate.smartproxy.com,
+    host: 'gate.smartproxy.com',
     port: 7000,
     protocol: 'https',
     auth: 'spm8v50ymm:PCGu36goaJtvd25tlh',
@@ -18,7 +18,7 @@ const agentOptions = {
 };
 
 
-const agent = new HttpsProxyAgent(proxyURL);
+const agent = new HttpsProxyAgent(agentOptions);
 console.log('agent:', agent);
 
 
@@ -64,6 +64,7 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
         const fileExtension = lowestQualityFormat.container;
         const contentLength = lowestQualityFormat.contentLength;
         const bitrate = lowestQualityFormat.audioBitrate; // Storing bitrate in case we need it later
+        const approxDurationMs = lowestQualityFormat.approxDurationMs; 
         const fileName = `${videoId}.${fileExtension}`;
 
         const bucket = admin.storage().bucket();
@@ -131,7 +132,8 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
                     const metadata = await file.getMetadata();
 
                     // Consolidated log statement for file details
-                    console.log(`File Details:
+
+                    console.log(`File Details for ${videoId}:
                         Name: ${metadata[0].name}
                         Bucket: ${metadata[0].bucket}
                         Size: ${metadata[0].size} bytes
@@ -140,6 +142,12 @@ exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
                         Total Bytes: ${totalBytesReceived}
                         Created: ${metadata[0].timeCreated}
                         Updated: ${metadata[0].updated}
+                        approxDurationMs: ${approxDurationMs}
+                        audio_url: ${publicUrl}
+                        fileExtension: ${fileExtension}
+                        length_seconds: ${lengthSeconds}
+                        file_size: ${metadata[0].size}
+                        transferred_bytes: ${totalBytesReceived}
                         Bitrate: ${bitrate} kbps`);
                     
                     if (!responseSent) {
