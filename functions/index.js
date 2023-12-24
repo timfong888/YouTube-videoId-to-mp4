@@ -17,14 +17,21 @@ const agentOptions = {
     // For TLS 1.3, use 'TLSv1_3_method' (ensure Node.js version compatibility)
 };
 
+//const agent = new HttpsProxyAgent(agentOptions);
 
-const agent = new HttpsProxyAgent(agentOptions);
+// Create an agent with the proxy URL
+const agent = new HttpsProxyAgent(proxyURL);
+
 console.log('agent:', agent);
 
 
 admin.initializeApp();
 
-exports.videoIdToMP4 = functions.https.onRequest(async (req, res) => {
+exports.videoIdToMP4 = functions
+    // Increased memory, decreased timeout (compared to defaults)
+    .runWith({ memory: '512MB', timeoutSeconds: 540 })
+    .https
+    .onRequest(async (req, res) => {
     const apiKey = functions.config().myapi.key;
     let responseSent = false;
 
