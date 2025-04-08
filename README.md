@@ -4,7 +4,6 @@ Yes, that's exactly the repo you should reference. The code you shared is from t
 
 Let me update the documentation to include this reference and enhance it with the specific details from this code:
 
-```markdown
 # YouTube Audio Extraction (videoIdToMP4)
 
 ## Overview
