@@ -213,4 +213,47 @@ Future<Map<String, dynamic>> extractAudioFromYouTube(String videoId) async {
    - Solution: Verify video is publicly accessible from your region
 ```
 
-This documentation now references the specific GitHub repository and includes more detailed information from the actual implementation. It should serve as a good starting point for your Obsidian documentation.
+The API key is not hardcoded in the code; it's stored as an environmental variable in Firebase Functions configuration. The code retrieves it using:
+
+```javascript
+const apiKey = functions.config().myapi.key;
+```
+
+This means the API key is stored in Firebase Functions configuration under the `myapi.key` path.
+
+To check the current value of this configuration variable, you can run:
+
+```bash
+firebase functions:config:get
+```
+
+This will display all your Firebase Functions configuration variables. If you only want to see the API key, you can run:
+
+```bash
+firebase functions:config:get myapi
+```
+
+Which should output something like:
+
+```json
+{
+  "key": "your-api-key-value"
+}
+```
+
+To set or update this configuration variable, the command is:
+
+```bash
+firebase functions:config:set myapi.key="your-new-api-key"
+```
+
+After updating configuration variables, you typically need to redeploy your functions for the changes to take effect:
+
+```bash
+firebase deploy --only functions:videoIdToMP4
+```
+
+This approach is better than hardcoding the API key because:
+1. It keeps sensitive information out of your source code
+2. It allows you to change the key without modifying and redeploying code
+3. It follows security best practices for credential management
